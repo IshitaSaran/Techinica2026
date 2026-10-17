@@ -16,6 +16,12 @@ from . import stego as stego_router
 
 router = APIRouter(prefix="/api", tags=["analyze"])
 
+# extract() reports ~0 for "nothing coherent", 0.4 for a valid header + binary
+# payload, and 0.5–1.0 for a readable payload. On clean photos ~1% of random LSB
+# headers look valid and yield 0.4 binary junk, so the one-click flow only surfaces
+# readable payloads; binary ones remain available via Stage 2's Extract button.
+MIN_EXTRACT_CONFIDENCE = 0.5
+
 MAGIC = [
     (b"\x89PNG\r\n\x1a\n", "png", "image"),
     (b"\xff\xd8\xff", "jpeg", "image"),
@@ -96,12 +102,21 @@ async def analyze(file: UploadFile = File(...)) -> list[Finding]:
             if plane:
                 stego_f[0].data["bit_plane_png"] = plane
             findings += stego_f
-            if stego_router.available() and stego_f[0].kind == "stego.suspicious":
-                findings += stego_router.extract_findings(data)
-                # Chain: if the payload is text, hand it straight to Stage 3.
-                text = findings[-1].data.get("text")
-                if text:
-                    findings += crypto_core.crack_findings(text.encode())
+            if stego_router.available():
+                # The statistical detector decides what the analyze card says; extraction
+                # success decides whether a payload card appears. Small payloads barely
+                # move whole-image statistics, so always try to extract.
+                extracted = stego_router.extract_findings(data)[0]
+                found = (extracted.kind == "stego.payload"
+                         and extracted.data.get("confidence", 0) >= MIN_EXTRACT_CONFIDENCE)
+                if found:
+                    findings.append(extracted)
+                    # Chain: if the payload is text, hand it straight to Stage 3.
+                    if extracted.data.get("text"):
+                        findings += crypto_core.crack_findings(extracted.data["text"].encode())
+                elif stego_f[0].kind == "stego.suspicious":
+                    # Detector fired but nothing readable came out: say so honestly.
+                    findings.append(extracted)
     elif family == "text":
         findings += crypto_core.identify_findings(data)
         findings += crypto_core.crack_findings(data)
