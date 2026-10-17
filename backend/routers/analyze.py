@@ -45,12 +45,14 @@ def sniff(data: bytes) -> tuple[str, str]:
 
 def _file_finding(name: str, data: bytes, ftype: str) -> Finding:
     ent = crypto_core.byte_entropy(data)
-    high = ent > 7.5
+    # Images/archives/PDFs are compressed by design, so high entropy only means
+    # something for files we couldn't otherwise identify.
+    high = ent > 7.5 and ftype in ("unknown binary", "text")
     return Finding(
         stage="metadata", kind="metadata.file",
         title=f"File identified as {ftype}",
         severity=Severity.low if high and ftype == "unknown binary" else Severity.info,
-        summary=(f"This file is really a {ftype}" + (" and its contents look almost perfectly random, which usually means encrypted or compressed data." if high else ".")),
+        summary=(f"This file's real type is {ftype}" + (" and its contents look almost perfectly random, which usually means encrypted or compressed data." if high else ".")),
         technical=f"{name}: {len(data)} bytes; magic={data[:8].hex()}; entropy={ent:.3f} bits/byte.",
         data={"filename": name, "type": ftype, "size": len(data), "entropy": round(ent, 3), "magic_hex": data[:8].hex()},
     )

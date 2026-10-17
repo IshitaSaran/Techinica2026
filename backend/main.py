@@ -52,4 +52,5 @@ def health():
         "search_index": len(search.index),
         "search_built_on": search.meta.get("device"),
         "stego_module": stego.available(),
+        "stego_missing": stego.missing(),
     }

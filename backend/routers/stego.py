@@ -27,13 +27,21 @@ router = APIRouter(prefix="/api/stego", tags=["stego"])
 MAX_BYTES = 20 * 1024 * 1024
 
 
+REQUIRED = ("analyze", "extract", "bit_plane_image", "embed")
+
+
 def available() -> bool:
-    return stego_core is not None
+    # An empty or partial stego.py still imports, so check the actual functions.
+    return stego_core is not None and all(callable(getattr(stego_core, f, None)) for f in REQUIRED)
+
+
+def missing() -> list[str]:
+    return [f for f in REQUIRED if not callable(getattr(stego_core, f, None))] if stego_core else list(REQUIRED)
 
 
 def _require() -> None:
     if not available():
-        raise HTTPException(501, "Stage 2 module not installed: add backend/core/stego.py (see README).")
+        raise HTTPException(501, f"Stage 2 module incomplete: backend/core/stego.py is missing {', '.join(missing())} (see README).")
 
 
 def _jsonable(x: Any) -> Any:
