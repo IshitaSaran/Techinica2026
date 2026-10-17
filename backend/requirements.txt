@@ -1,0 +1,12 @@
+fastapi>=0.115
+uvicorn[standard]>=0.30
+python-multipart>=0.0.9
+pydantic>=2.7
+pillow>=10.4
+numpy>=1.26
+
+# Stage 1 (CLIP search). On a CPU-only box install the small CPU wheel FIRST:
+#   pip install torch --index-url https://download.pytorch.org/whl/cpu
+# The app still runs without these; search endpoints then return 503.
+torch>=2.3
+open_clip_torch>=2.24

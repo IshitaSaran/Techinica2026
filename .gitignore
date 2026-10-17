@@ -1,0 +1,26 @@
+# Claude Code local state — never commit
+.claude/
+CLAUDE.md
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.env
+
+# Node
+node_modules/
+dist/
+.vercel/
+
+# Generated demo data (rebuild with backend/scripts/*)
+backend/data/sample_images/*
+!backend/data/sample_images/.gitkeep
+backend/data/embeddings.npy
+backend/data/embeddings_index.json
+backend/data/demo_case.json
+
+# OS
+.DS_Store
+Thumbs.db
