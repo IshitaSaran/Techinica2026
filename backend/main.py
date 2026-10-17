@@ -13,13 +13,22 @@ from routers import analyze, crypto, search as search_router, stego
 
 app = FastAPI(title="Sift", version="0.1.0", description="Find it → Open it → Crack it.")
 
-# CORS: comma-separated origins, e.g. "https://sift.vercel.app,http://localhost:5173".
-# SIFT_CORS_REGEX additionally allows Vercel preview URLs (e.g. https://sift-.*\.vercel\.app).
-origins = [o.strip() for o in os.getenv("SIFT_CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173").split(",") if o.strip()]
+# CORS — env-driven, with defaults that work out of the box for local dev + Vercel:
+#   SIFT_CORS_ORIGINS  comma-separated exact origins (default: the Vite dev server)
+#   SIFT_CORS_REGEX    regex for extra origins (default: any https://*.vercel.app,
+#                      covering production and preview deploys). Starlette fullmatches
+#                      it, so look-alikes such as x.vercel.app.evil.com are rejected.
+#                      Set it to an empty string to turn regex matching off.
+# No credentials are allowed (the API is cookie-free), so a broad origin match is safe.
+DEFAULT_CORS_ORIGINS = "http://localhost:5173,http://127.0.0.1:5173"
+DEFAULT_CORS_REGEX = r"https://.*\.vercel\.app"
+
+origins = [o.strip() for o in os.getenv("SIFT_CORS_ORIGINS", DEFAULT_CORS_ORIGINS).split(",") if o.strip()]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
-    allow_origin_regex=os.getenv("SIFT_CORS_REGEX") or None,
+    allow_origin_regex=os.getenv("SIFT_CORS_REGEX", DEFAULT_CORS_REGEX) or None,
+    allow_credentials=False,
     allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )

@@ -2,7 +2,7 @@
 
 **Find it → Open it → Crack it.** Sift runs a real forensic pipeline on uploaded evidence and explains every finding in plain language.
 
-1. **Find it.** Search 500+ seized images by describing them ("a laptop on a desk"). CLIP embeddings are built on a **Vultr Cloud GPU**.
+1. **Find it.** Search 500+ seized images by describing them ("a laptop on a desk"). CLIP embedding is GPU-capable (the kind of job **Vultr Cloud GPUs** are built for), but embeddings are precomputed and cached, so the live service runs CPU-only on **Vultr**.
 2. **Open it.** Steganalysis checks the suspicious image for hidden data and pulls the payload out.
 3. **Crack it.** Cryptanalysis identifies the cipher (Index of Coincidence, frequency analysis) and breaks it (Caesar/ROT, XOR, Vigenère, base64/32/hex, hashes).
 
@@ -15,14 +15,14 @@ Every result is a **Finding** with a severity (icon + colour + text), a one-line
 ```
 backend/   FastAPI app
   main.py              app, CORS, /api/health, startup cache load
-  core/                forensic engines (findings, crypto, clip_search, explain, stego*)
+  core/                forensic engines (findings, stego, crypto, clip_search, explain)
   routers/             analyze (magic-byte dispatcher), stego, crypto, search
   scripts/             fetch_sample_images, build_embeddings, plant_demo_case
   data/                sample_images/, embeddings.npy, embeddings_index.json (generated, git-ignored)
 frontend/  React + Vite (deploys to Vercel)
 ```
 
-\* **`backend/core/stego.py` is not in the repo yet.** The Stage 2 routes, the Learn sandbox and `plant_demo_case.py` are wired to it. Until it exists they answer `501` and show a "module not installed" finding; everything else runs. The interface it must provide is documented at the top of [backend/routers/stego.py](backend/routers/stego.py):
+**`backend/core/stego.py`** is the Stage 2 LSB steganography module. It powers the Stage 2 routes, the Learn sandbox and `plant_demo_case.py`. Its interface is documented at the top of [backend/routers/stego.py](backend/routers/stego.py):
 
 | function | returns |
 |---|---|
@@ -72,99 +72,126 @@ This Vigenère-encrypts a note (key `TERRAPIN`), base64-encodes it and hides it 
 
 ---
 
-## Deploy: Vultr backend + Vercel frontend
+## Deployment
 
-Deploy a hello-world of both early (hour 2), not at hour 23.
+### Architecture
 
-### Cost plan for the $100 MLH credit
+```
+Browser ──HTTPS──▶ Vercel: React + Vite static build (frontend/)
+                     │  fetch(VITE_API_BASE_URL + "/api/…")
+                     ▼
+Vultr Ubuntu ── Caddy :443 (TLS for the sslip.io hostname)
+                     │  reverse_proxy
+                     ▼
+                 uvicorn 0.0.0.0:8000 (FastAPI, systemd service "sift")
+                   ├─ Stage 2/3: stego + crypto (Pillow/numpy, pure Python)
+                   └─ Stage 1: CLIP search: data/embeddings.npy loaded once at startup,
+                      each query = one CPU text embed (~0.3 s) + a matrix multiply
+```
 
-| instance | runs | when |
-|---|---|---|
-| **CPU**: Vultr Cloud Compute, regular, 2 vCPU / 4 GB is plenty | FastAPI, crypto, stego, cached CLIP search | the whole hack |
-| **GPU**: Vultr Cloud GPU, smallest/fractional plan | `build_embeddings.py` only | about 20 minutes, then **destroy** |
+The runtime is **CPU-only**. CLIP image embeddings are computed ahead of time by `scripts/build_embeddings.py` and cached on disk, so serving never needs a GPU.
 
-Search only needs the cached `embeddings.npy` (a single matrix multiply) plus a text embed, which takes about 300 ms on CPU. So **the live demo runs entirely on the cheap CPU box.** The GPU is the headline workload, not a runtime dependency. Check current hourly prices on Vultr's pricing page before launching the GPU.
+### Live URLs
 
-### 1. CPU instance (always on)
+| | |
+|---|---|
+| Frontend (Vercel) | https://techinica2026-7ir40lzno-ishitasaran123-3498s-projects.vercel.app |
+| Backend API (Vultr + Caddy) | https://64-176-214-27.sslip.io (health check: [`/api/health`](https://64-176-214-27.sslip.io/api/health)) |
+| Server | Vultr Ubuntu instance, public IP `64.176.214.27` |
 
-Create it in the Vultr dashboard: Cloud Compute, Ubuntu 24.04, any region near you, and add your SSH key. Then:
+### 1. Backend setup (on the Vultr instance)
 
 ```bash
-ssh root@CPU_IP
-apt update && apt install -y python3-venv python3-pip git libjpeg-dev zlib1g-dev
-git clone https://github.com/YOU/Techinica2026.git /opt/sift && cd /opt/sift/backend
+ssh root@64.176.214.27
+apt update && apt install -y python3 python3-venv python3-pip git
+git clone https://github.com/IshitaSaran/Techinica2026.git /opt/sift
+cd /opt/sift/backend
 python3 -m venv .venv && . .venv/bin/activate
-pip install torch --index-url https://download.pytorch.org/whl/cpu
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
 pip install -r requirements.txt
-python scripts/fetch_sample_images.py --count 520
 
-export SIFT_CORS_ORIGINS="https://YOUR-APP.vercel.app,http://localhost:5173"
-uvicorn main:app --host 0.0.0.0 --port 8000
+python scripts/fetch_sample_images.py --count 520                # evidence photos (git-ignored)
+python scripts/build_embeddings.py                               # -> data/embeddings.npy + embeddings_index.json
+python scripts/plant_demo_case.py --query "a laptop on a desk"   # hides the encrypted note; prints "Chain verified ✔"
 ```
 
-**Firewall:** In Vultr, go to *Network → Firewall → Add group*, add an inbound rule for TCP 8000 (plus 80 and 443 for HTTPS below), and attach the group to the instance. If `ufw` is active, also run `ufw allow 8000,80,443/tcp`.
+### 2. Run as the `sift` systemd service
 
-Check from your laptop: `curl http://CPU_IP:8000/api/health`. It reports `"gpu": false` on this box, which is expected.
-
-**Keep it running after you log out** with `/etc/systemd/system/sift.service`:
-
-```ini
+```bash
+cat > /etc/systemd/system/sift.service <<'EOF'
 [Unit]
-Description=Sift API
+Description=Sift API (FastAPI / uvicorn)
 After=network.target
+
 [Service]
 WorkingDirectory=/opt/sift/backend
-Environment=SIFT_CORS_ORIGINS=https://YOUR-APP.vercel.app
+Environment=SIFT_CORS_ORIGINS=https://techinica2026-7ir40lzno-ishitasaran123-3498s-projects.vercel.app
+# SIFT_CORS_REGEX defaults to https://.*\.vercel\.app in main.py, so it isn't set here.
 ExecStart=/opt/sift/backend/.venv/bin/uvicorn main:app --host 0.0.0.0 --port 8000
 Restart=always
+
 [Install]
 WantedBy=multi-user.target
+EOF
+systemctl daemon-reload && systemctl enable --now sift
+systemctl status sift --no-pager
+curl http://127.0.0.1:8000/api/health
 ```
 
-Then run `systemctl daemon-reload && systemctl enable --now sift`.
+### 3. Firewall (ufw)
 
-**HTTPS (needed for Vercel).** A page served over HTTPS can't call `http://IP:8000`, because browsers block it as mixed content. A free fix that needs no domain is Caddy plus sslip.io:
+```bash
+ufw allow OpenSSH            # allow SSH before enabling, or you'll lock yourself out
+ufw allow 8000/tcp           # direct API access (optional once Caddy is up)
+ufw allow 80/tcp             # Let's Encrypt HTTP challenge
+ufw allow 443/tcp            # HTTPS
+ufw enable && ufw status
+```
+
+If the instance has a Vultr firewall group attached, open the same ports there too.
+
+### 4. HTTPS with Caddy + sslip.io
+
+The Vercel site is served over HTTPS, so browsers block calls to a plain `http://IP:8000` backend as mixed content. sslip.io maps `64-176-214-27.sslip.io` to `64.176.214.27`, which gives Caddy a hostname it can get a free certificate for. No domain purchase is needed.
 
 ```bash
 apt install -y caddy
-echo 'CPU-IP-WITH-DASHES.sslip.io {
-  reverse_proxy 127.0.0.1:8000
-}' > /etc/caddy/Caddyfile        # e.g. 203-0-113-10.sslip.io
+cat > /etc/caddy/Caddyfile <<'EOF'
+64-176-214-27.sslip.io {
+    reverse_proxy 127.0.0.1:8000
+}
+EOF
 systemctl restart caddy
+curl https://64-176-214-27.sslip.io/api/health
+# -> {"status":"ok","gpu":false,"device":"cpu","search_index":545,...,"stego_module":true,"stego_missing":[]}
 ```
 
-Your API is now `https://CPU-IP-WITH-DASHES.sslip.io`. Caddy fetches the certificate automatically.
+### 5. Frontend on Vercel
 
-### 2. GPU instance (on demand, destroy right after)
+- Import the repo and set **Root Directory = `frontend`**. The Vite preset is detected automatically (`npm run build` → `dist`).
+- Set the environment variable `VITE_API_BASE_URL=https://64-176-214-27.sslip.io` (no trailing slash).
+- Redeploy after changing it, because Vite bakes the value into the build.
 
-In the Vultr dashboard, choose *Cloud GPU*, the smallest NVIDIA plan, and an Ubuntu image with NVIDIA drivers. Then:
+### CORS environment variables
+
+| Variable | Live value | Default if unset (`backend/main.py`) |
+|---|---|---|
+| `SIFT_CORS_ORIGINS` | `https://techinica2026-7ir40lzno-ishitasaran123-3498s-projects.vercel.app` | `http://localhost:5173,http://127.0.0.1:5173` |
+| `SIFT_CORS_REGEX` | `https://.*\.vercel\.app` | `https://.*\.vercel\.app` (set to empty to disable) |
+
+Origins are fullmatched, no credentials are allowed, and the API uses no cookies. A fresh clone therefore works with any Vercel deployment and the local Vite dev server without extra config.
+
+### Updating the live server
 
 ```bash
-ssh root@GPU_IP
-nvidia-smi                                   # confirm the GPU is visible
-apt update && apt install -y python3-venv git
-git clone https://github.com/YOU/Techinica2026.git sift && cd sift/backend
-python3 -m venv .venv && . .venv/bin/activate
-pip install -r requirements.txt              # default torch wheel includes CUDA
-python scripts/fetch_sample_images.py --count 520
-python scripts/build_embeddings.py           # prints "...on cuda (NVIDIA ...)"
-scp data/embeddings.npy data/embeddings_index.json root@CPU_IP:/opt/sift/backend/data/
+cd /opt/sift && git pull && systemctl restart sift
 ```
 
-> **Destroy the GPU instance now.** Stopping it isn't enough, because Vultr bills stopped instances. Use *Server → Destroy*. The cached embeddings are all search needs.
+`data/` (photos, embeddings, the planted image and `demo_case.json`) is git-ignored, so a pull never overwrites it. Re-run step 1's scripts only if you want to rebuild the index or re-plant the demo case.
 
-Back on the CPU box, run `systemctl restart sift`. `/api/health` should now show `"search_index": 545, "search_built_on": "cuda"`. Then plant the demo case (see above) and restart again.
+### Optional: build the index on a Vultr Cloud GPU, then tear down
 
-### 3. Frontend on Vercel
-
-1. In Vercel, *Add New Project*, import the repo and set **Root Directory = `frontend`**. The Vite preset is detected automatically (build `npm run build`, output `dist`).
-2. Under *Environment Variables*, set `VITE_API_BASE_URL = https://CPU-IP-WITH-DASHES.sslip.io` (no trailing slash).
-3. Deploy, then put the Vercel URL into `SIFT_CORS_ORIGINS` on the backend and restart it. For preview deploys, also set `SIFT_CORS_REGEX`.
-
-### 4. Teardown
-
-- Destroy the GPU instance as soon as embeddings are copied.
-- After judging, destroy the CPU instance and delete the firewall group and any snapshots. MLH credits expire after 30 days, so don't leave anything idling.
+On a Cloud GPU instance, run the same step 1 commands but use the default CUDA wheels (`pip install -r requirements.txt` without the CPU index URL). Then copy the index across with `scp data/embeddings.npy data/embeddings_index.json root@64.176.214.27:/opt/sift/backend/data/` and **destroy** the GPU instance. Vultr bills stopped instances, so stopping isn't enough. After judging, destroy the CPU instance too, so the MLH credits (30-day expiry) aren't wasted.
 
 ---
 
@@ -172,6 +199,6 @@ Back on the CPU box, run `systemctl restart sift`. `/api/health` should now show
 
 **Cipher Tech: Best Digital Forensics Hack.** Sift does real forensic analysis rather than mock-ups. Uploaded evidence is identified by magic bytes, not file extension. Images go through LSB steganalysis (entropy, chi-square on the low bit plane, bit-plane visualisation) and payload recovery. Recovered data feeds straight into a cryptanalysis engine. It uses Index of Coincidence and frequency analysis to identify the cipher, then breaks Caesar/ROT, single-byte XOR and Vigenère (key length from IoC plus Kasiski, then per-column frequency analysis), peels base64/base32/hex layers, and identifies and dictionary-attacks unsalted hashes. Every candidate decryption is ranked by an English-likeness score, with a human-readable reason.
 
-**MLH: Best Use of Vultr.** Stage 1 is semantic search across 500+ seized images using OpenCLIP (ViT-B/32), and the corpus is embedded on a Vultr Cloud GPU. The architecture is deliberately cost-aware. The GPU does the heavy batch embedding once and is then destroyed. A small Vultr Cloud Compute instance serves the cached embedding matrix, so each live query is a single text embed plus a matrix multiply. `/api/health` reports which device built the index.
+**MLH: Best Use of Vultr.** Stage 1 is semantic search across 500+ seized images using OpenCLIP (ViT-B/32). Batch CLIP embedding is GPU-accelerated: `build_embeddings.py` uses CUDA automatically when it's available, which is the job Vultr Cloud GPUs are made for. The architecture is deliberately cost-aware, though. Embeddings are computed once and cached to disk, so the live service runs CPU-only on a Vultr compute instance. Each query is a single text embed plus a matrix multiply, about 0.3 s on CPU. `/api/health` reports the runtime device and which device built the index.
 
 **Technica: Best Education Hack / A Sea for All (Accessibility).** Each finding has three layers: a plain-language summary anyone can read, the technical detail for experts, and a "What / Why / How" explanation. Learn Mode opens all the explanations and adds a hide-and-seek sandbox. Learners hide their own message in a picture, then switch roles and watch the tool detect and recover it. The UI is screen-reader-first. It uses semantic landmarks and headings, an `aria-live` region that announces every result, labelled inputs, full keyboard navigation with visible focus, focus moved to the next stage when evidence is handed off, alt text on every image (including the bit-plane view), and severity that is never shown by colour alone. It also respects light/dark mode and reduced motion.
