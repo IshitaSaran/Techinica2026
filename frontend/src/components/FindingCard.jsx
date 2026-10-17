@@ -35,7 +35,7 @@ export default function FindingCard({ finding, learn, children }) {
       <button type="button" className="link" aria-expanded={open} aria-controls={panelId} onClick={() => setOpen(!open)}>
         {open ? "▾" : "▸"} How did we find this?
       </button>
-      <div id={panelId} hidden={!open} className="edu">
+      <div id={panelId} hidden={!open} className={`edu ${learn ? "edu-learn" : ""}`}>
         <dl>
           <dt>What it means</dt><dd>{edu.what}</dd>
           <dt>Why it matters</dt><dd>{edu.why}</dd>

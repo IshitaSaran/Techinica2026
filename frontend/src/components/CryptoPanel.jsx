@@ -1,6 +1,9 @@
 import { useState } from "react";
 import { cryptoCrack, cryptoIdentify } from "../api.js";
 import FindingList from "./FindingList.jsx";
+import LearnIntro from "./LearnIntro.jsx";
+import LearnNow from "./LearnNow.jsx";
+import { INTROS } from "../learnContent.js";
 
 // Stage 3 — identify the cipher, then break it.
 export default function CryptoPanel({ learn, announce, text, setText, headingRef }) {
@@ -21,6 +24,13 @@ export default function CryptoPanel({ learn, announce, text, setText, headingRef
   return (
     <section className="panel" aria-labelledby="s3-h">
       <h2 id="s3-h" tabIndex={-1} ref={headingRef}><span className="step">3</span> Crack it: decrypt the message</h2>
+      {learn && (
+        <LearnIntro stage="crypto">
+          {!text.trim() && (
+            <button type="button" className="chip" onClick={() => setText(INTROS.crypto.sample)}>{INTROS.crypto.sampleLabel}</button>
+          )}
+        </LearnIntro>
+      )}
       <p className="hint">Paste scrambled text, or send the payload from Stage 2. Sift tries classic ciphers and ranks results by how much they read like English.</p>
       <label htmlFor="ct">Ciphertext</label>
       <textarea id="ct" rows={5} value={text} onChange={(e) => setText(e.target.value)} placeholder="e.g. Uryyb jbeyq" />
@@ -29,6 +39,7 @@ export default function CryptoPanel({ learn, announce, text, setText, headingRef
         <button type="button" disabled={!text.trim() || state.busy} onClick={() => run("crack")}>Crack it</button>
       </div>
       {state.error && <p className="error" role="alert">{state.error}</p>}
+      {learn && <LearnNow findings={state.findings} />}
       <FindingList findings={state.findings} learn={learn} render={(f) => f.data?.best?.plaintext && f.severity === "high" && (
         <blockquote className="plain">{f.data.best.plaintext}</blockquote>
       )} />

@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { b64ToFile, stegoAnalyze, stegoEmbed, stegoExtract } from "../api.js";
 import FindingList from "./FindingList.jsx";
+import LearnNow from "./LearnNow.jsx";
+import { INTROS } from "../learnContent.js";
 
 // Draw a simple gradient "photo" in the browser so learners don't need their own image.
 function makeCanvasImage() {
@@ -52,9 +54,9 @@ export default function LearnSandbox({ learn, announce, available }) {
   });
 
   return (
-    <section className={`panel sandbox ${learn ? "featured" : ""}`} aria-labelledby="lab-h">
+    <section className="panel sandbox" aria-labelledby="lab-h">
       <h2 id="lab-h"><span aria-hidden="true">🧪 </span>Try it yourself: hide and seek</h2>
-      <p className="hint">Hide your own secret in a picture, then switch sides and be the investigator.</p>
+      <p className="lead">{INTROS.sandbox.lead}</p>
       {!available && <p className="note">This sandbox needs the steganalysis module on the server.</p>}
       <label htmlFor="secret">Your secret message</label>
       <input id="secret" type="text" maxLength={500} value={message} onChange={(e) => setMessage(e.target.value)} />
@@ -78,6 +80,7 @@ export default function LearnSandbox({ learn, announce, available }) {
           Recovered: “{recovered}” {recovered === message ? "(exact match)" : ""}
         </p>
       )}
+      <LearnNow findings={findings} />
       <FindingList findings={findings} learn={learn} />
     </section>
   );

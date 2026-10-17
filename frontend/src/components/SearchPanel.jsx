@@ -2,6 +2,9 @@ import { useState } from "react";
 import { fetchEvidence, imageUrl, searchImage, searchText } from "../api.js";
 import FindingList from "./FindingList.jsx";
 import UploadDropzone from "./UploadDropzone.jsx";
+import LearnIntro from "./LearnIntro.jsx";
+import LearnNow from "./LearnNow.jsx";
+import { INTROS } from "../learnContent.js";
 
 // Stage 1 — find the needle in 500+ seized images by describing it.
 export default function SearchPanel({ learn, announce, onOpen, available }) {
@@ -27,6 +30,16 @@ export default function SearchPanel({ learn, announce, onOpen, available }) {
   return (
     <section className="panel" aria-labelledby="s1-h">
       <h2 id="s1-h"><span className="step">1</span> Find it: search the evidence</h2>
+      {learn && (
+        <LearnIntro stage="search">
+          <p className="try">{INTROS.search.tryIt}</p>
+          <ul className="chips" aria-label="Example searches">
+            {INTROS.search.examples.map((ex) => (
+              <li key={ex}><button type="button" className="chip" onClick={() => setQuery(ex)}>{ex}</button></li>
+            ))}
+          </ul>
+        </LearnIntro>
+      )}
       <p className="hint">Describe what you're looking for in plain words. AI ranks every image by meaning, not by filename.</p>
       {available === false && <p className="note">The search index isn't built on this server yet.</p>}
       <form className="row" onSubmit={(e) => { e.preventDefault(); query.trim() && run(() => searchText(query.trim()), query); }}>
@@ -41,6 +54,7 @@ export default function SearchPanel({ learn, announce, onOpen, available }) {
       </details>
       {state.error && <p className="error" role="alert">{state.error}</p>}
 
+      {learn && <LearnNow findings={state.findings} />}
       <FindingList findings={state.findings} learn={learn} />
       {state.matches.length > 0 && (
         <ol className="grid" aria-label="Search results, best match first">

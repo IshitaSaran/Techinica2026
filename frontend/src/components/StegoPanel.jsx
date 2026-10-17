@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { stegoAnalyze, stegoExtract } from "../api.js";
 import FindingList from "./FindingList.jsx";
 import UploadDropzone from "./UploadDropzone.jsx";
+import LearnIntro from "./LearnIntro.jsx";
+import LearnNow from "./LearnNow.jsx";
 
 // Stage 2 — is something hidden in this image? If so, pull it out.
 export default function StegoPanel({ learn, announce, file, setFile, onSendToCrypto, headingRef, available }) {
@@ -37,6 +39,7 @@ export default function StegoPanel({ learn, announce, file, setFile, onSendToCry
   return (
     <section className="panel" aria-labelledby="s2-h">
       <h2 id="s2-h" tabIndex={-1} ref={headingRef}><span className="step">2</span> Open it: look for hidden data</h2>
+      {learn && <LearnIntro stage="stego" />}
       <p className="hint">Images can carry secret data in tiny colour changes your eye can't see. Pick a PNG from Stage 1 or upload one.</p>
       {!available && <p className="note">The steganalysis module isn't installed on this server yet.</p>}
       <UploadDropzone id="s2-upload" label="Choose an image" accept="image/png,image/bmp,image/*" busy={state.busy} onFile={setFile} />
@@ -62,6 +65,7 @@ export default function StegoPanel({ learn, announce, file, setFile, onSendToCry
       </div>
       {state.error && <p className="error" role="alert">{state.error}</p>}
 
+      {learn && <LearnNow findings={state.findings} />}
       <FindingList findings={state.findings} learn={learn} render={(f) =>
         f.kind === "stego.payload" && (
           <div className="payload">

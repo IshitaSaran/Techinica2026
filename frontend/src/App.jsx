@@ -7,6 +7,7 @@ import SearchPanel from "./components/SearchPanel.jsx";
 import StegoPanel from "./components/StegoPanel.jsx";
 import CryptoPanel from "./components/CryptoPanel.jsx";
 import LearnSandbox from "./components/LearnSandbox.jsx";
+import Ocean from "./components/Ocean.jsx";
 
 export default function App() {
   const [learn, setLearn] = useState(false);
@@ -55,10 +56,11 @@ export default function App() {
 
   return (
     <>
+      <Ocean />
       <a className="skip" href="#main">Skip to content</a>
       <header className="top">
         <div>
-          <h1>Sift</h1>
+          <h1><span className="logo" aria-hidden="true">◎</span> Sift</h1>
           <p className="tag">Find it → Open it → Crack it. A guided forensic investigation that explains every step.</p>
         </div>
         <div className="top-right">
@@ -81,11 +83,11 @@ export default function App() {
         <SearchPanel learn={learn} announce={announce} onOpen={sendToStego} available={status?.search_index > 0} />
         <StegoPanel learn={learn} announce={announce} file={evidence} setFile={setEvidence} onSendToCrypto={sendToCrypto} headingRef={stegoRef} available={status?.stego_module !== false} />
         <CryptoPanel learn={learn} announce={announce} text={cipher} setText={setCipher} headingRef={cryptoRef} />
-        <LearnSandbox learn={learn} announce={announce} available={status?.stego_module !== false} />
+        {learn && <LearnSandbox learn={learn} announce={announce} available={status?.stego_module !== false} />}
       </main>
 
       <footer className="foot">
-        <p>Built at Technica 2026. Stage 1 runs CLIP embeddings on a Vultr Cloud GPU.</p>
+        <p>Built at Technica 2026 · Dare to Dive. CLIP embeddings are precomputed and served CPU-only on Vultr.</p>
       </footer>
     </>
   );
